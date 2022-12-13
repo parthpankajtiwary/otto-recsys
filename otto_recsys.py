@@ -11,23 +11,25 @@ mp.set_start_method('spawn', force=True)
 from collections import defaultdict, Counter
 import cudf, itertools
 
-import pandarallel
-from pandarallel import pandarallel
-pandarallel.initialize(nb_workers=1, progress_bar=True, use_memory_fs=False)
+from annoy import AnnoyIndex
+from gensim.test.utils import common_texts
+from gensim.models import Word2Vec
 
 import warnings
 warnings.filterwarnings('ignore')
 
 class config:
     data_path = 'data/'
-    local_validation = True
+    local_validation = False
     debug = False
+    word2vec = True
     validation_path = 'data/local_validation/'
     train_file = 'train.parquet'
     test_file = 'test.parquet'
     test_labels_file = 'test_labels.parquet'
     submission_path = 'submissions/'
     submission_file = 'submission_{:%Y-%m-%d_%H-%M}.csv'
+    model_path = 'models/word2vec.model'
     type_labels = {'clicks':0, 'carts':1, 'orders':2}
     type_weight = {0:1, 1:6, 2:3}
     version = 1
@@ -52,6 +54,30 @@ def load_data():
     if config.debug:
         data = data.sample(frac=config.fraction, random_state=config.random_state)
     return data, test
+
+
+def load_model():
+    """Load word2vec model."""
+    if config.word2vec:
+        print('Loading word2vec model...')
+        model = Word2Vec.load(config.model_path)
+        return model
+    else:
+        return None
+
+
+def build_index(model, n_trees=100):
+    """Build index for word2vec model."""
+    if config.word2vec:
+        print('Building index for word2vec model...')
+        aid2idx = {aid: i for i, aid in enumerate(model.wv.index_to_key)}
+        index = AnnoyIndex(model.wv.vector_size, metric='euclidean')
+        for aid, idx in aid2idx.items():
+            index.add_item(idx, model.wv.vectors[idx])
+        index.build(n_trees=n_trees)
+        return index, aid2idx
+    else:
+        return None, None
 
 
 def process_covisitation_in_chunks(data, chunk_size):
@@ -129,7 +155,15 @@ def load_combined_covisitation(test, version=config.version):
     return top_20, top_clicks, top_orders
 
 
-def suggest_clicks(df, top_20, top_clicks):
+def get_nns(model, index, product, aid2idx, n=21):
+    """Get nearest neighbors for a given aid."""
+    idx = aid2idx[product]
+    nns = index.get_nns_by_item(idx, n)[1:]
+    nns = [model.wv.index_to_key[idx] for idx in nns]
+    return nns
+
+
+def suggest_clicks(df, top_20, top_clicks, model, index, aid2idx):
     products = df.aid.tolist()
     types = df.type.tolist()
     unique_products = list(dict.fromkeys(products[::-1] ))
@@ -144,23 +178,36 @@ def suggest_clicks(df, top_20, top_clicks):
         sorted_products = [product for product, _ in products_tmp.most_common(50)]
         return sorted_products
 
-    # check if it is possible to index into dataframe using productid
     products_1 = list(itertools.chain(*[top_20[product] \
                     for product in unique_products if product in top_20]))
-    top_products_1 = [product for product, _ in Counter(products_1).most_common(50) \
-                    if product not in unique_products]
+
+    if config.word2vec:
+        products = list(dict.fromkeys(products[::-1]))
+        # most_recent_product = products[0]
+        # nns = [model.wv.index_to_key[i]
+        #        for i in index.get_nns_by_item(aid2idx[most_recent_product], 21)[1:]]
+        products_2 = list(itertools.chain(*[get_nns(model, index, product, aid2idx) 
+                          for product in unique_products if product in top_20]))
+
+
+        top_products_1 = [product for product, _ in Counter(products_1 + products_2).most_common(50) \
+                        if product not in unique_products]
+    else:
+        top_products_1 = [product for product, _ in Counter(products_1).most_common(50) \
+                        if product not in unique_products]
+
     result = unique_products + top_products_1[:20 - len(unique_products)]
     return result + list(top_clicks[:20 - len(result)])
 
 
-def generate_candidates(test, top_20, top_clicks):
+def generate_candidates(test, top_20, top_clicks, model, index, aid2idx):
     test = test.to_pandas()
 
     tqdm.pandas()
 
     pred_df = test.sort_values(["session", "ts"]) \
-                         .groupby(["session"]) \
-                         .progress_apply(lambda x: suggest_clicks(x, top_20, top_clicks))
+                  .groupby(["session"]) \
+                  .progress_apply(lambda x: suggest_clicks(x, top_20, top_clicks, model, index, aid2idx)) 
 
     clicks_pred_df = pd.DataFrame(pred_df.add_suffix("_clicks"), columns=["labels"]).reset_index()
     orders_pred_df = pd.DataFrame(pred_df.add_suffix("_orders"), columns=["labels"]).reset_index()
@@ -187,7 +234,8 @@ def compute_validation_score(pred):
             test_labels = pd.read_parquet(config.validation_path + config.test_labels_file)
             test_labels = test_labels.loc[test_labels['type']==t]
             test_labels = test_labels.merge(sub, how='left', on=['session'])
-            test_labels['hits'] = test_labels.apply(lambda df: len(set(df.ground_truth).intersection(set(df.labels))), axis=1)
+            test_labels['hits'] = test_labels.apply(lambda df: len(set(df.ground_truth) \
+                                             .intersection(set(df.labels))), axis=1)
             test_labels['gt_count'] = test_labels.ground_truth.str.len().clip(0,20)
             recall = test_labels['hits'].sum() / test_labels['gt_count'].sum()
             score += weights[t]*recall
@@ -201,11 +249,12 @@ def compute_validation_score(pred):
 """Main module."""
 def main():
     data, test = load_data()
-    generate_combined_covisitation(data, config.chunk_size)
+    # generate_combined_covisitation(data, config.chunk_size)
     top_20, top_clicks, top_orders = load_combined_covisitation(test)
-    pred = generate_candidates(test, top_20, top_clicks)
+    word2vec = load_model()
+    index, aid2idx = build_index(word2vec)
+    pred = generate_candidates(test, top_20, top_clicks, word2vec, index, aid2idx)
     compute_validation_score(pred)
-
 
 if __name__ == '__main__':
     main()
