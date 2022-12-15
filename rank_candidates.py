@@ -19,14 +19,14 @@ from utils.submit import submit_file
 
 from pandarallel import pandarallel
 
-pandarallel.initialize(progress_bar=True, nb_workers=8, use_memory_fs=False)
+pandarallel.initialize(progress_bar=True, use_memory_fs=False)
 
 
 class config:
     data_path = "data/"
     local_validation = True
     debug = False
-    word2vec = False
+    word2vec = True
     validation_path = "data/local_validation/"
     train_file = "train.parquet"
     test_file = "test.parquet"
@@ -115,7 +115,7 @@ def load_combined_covisitation(version=config.version, type="clicks"):
     return top_20
 
 
-def suggest_clicks(df, top_20, top_clicks, model, index, aid2idx):
+def suggest_clicks(df, top_20, top_clicks, model):
     products = df.aid.tolist()
     types = df.type.tolist()
     unique_products = list(dict.fromkeys(products[::-1]))
@@ -170,7 +170,7 @@ def suggest_clicks(df, top_20, top_clicks, model, index, aid2idx):
         return result + list(top_clicks[: 20 - len(result)])
 
 
-def suggest_orders(df, top_15_buy2buy, top_15_buys, top_orders, model, index, aid2idx):
+def suggest_orders(df, top_15_buy2buy, top_15_buys, top_orders, model):
     products = df.aid.tolist()
     types = df.type.tolist()
     unique_products = list(dict.fromkeys(products[::-1]))
@@ -258,9 +258,7 @@ def generate_candidates(
     covisits_buy2buy,
     top_clicks,
     top_orders,
-    model,
-    index,
-    aid2idx,
+    model
 ):
 
     tqdm.pandas()
@@ -270,7 +268,7 @@ def generate_candidates(
         .groupby(["session"])
         .parallel_apply(
             lambda x: suggest_clicks(
-                x, covisit_clicks, top_clicks, model, index, aid2idx
+                x, covisit_clicks, top_clicks, model
             )
         )
     )
@@ -284,9 +282,7 @@ def generate_candidates(
                 covisits_buy2buy,
                 covisit_carts_orders,
                 top_orders,
-                model,
-                index,
-                aid2idx,
+                model
             )
         )
     )
@@ -300,9 +296,7 @@ def generate_candidates(
                 covisits_buy2buy,
                 covisit_carts_orders,
                 top_orders,
-                model,
-                index,
-                aid2idx,
+                model
             )
         )
     )
@@ -355,8 +349,6 @@ def compute_validation_score(pred):
 
 
 """Main module."""
-
-
 def main():
     data, test = load_data()
     top_clicks, top_orders = get_top_clicks_orders(test)
@@ -364,7 +356,10 @@ def main():
     covisit_carts_orders = load_combined_covisitation(type="carts-orders")
     covisits_buy2buy = load_combined_covisitation(type="buy2buy")
     word2vec = load_model()
+    # idiotic hack to make word2vec work with parallel_apply
+    global index, aid2idx 
     index, aid2idx = build_index(word2vec)
+
     pred = generate_candidates(
         test,
         covisit_clicks,
@@ -372,9 +367,7 @@ def main():
         covisits_buy2buy,
         top_clicks,
         top_orders,
-        word2vec,
-        index,
-        aid2idx,
+        word2vec
     )
     compute_validation_score(pred)
     if not config.local_validation:
