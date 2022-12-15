@@ -6,8 +6,8 @@
 import unittest
 from click.testing import CliRunner
 
-from otto_recsys import otto_recsys
-from otto_recsys import cli
+from rank_candidates import otto_recsys
+from rank_candidates import cli
 
 
 class TestOtto_recsys(unittest.TestCase):
@@ -27,7 +27,7 @@ class TestOtto_recsys(unittest.TestCase):
         runner = CliRunner()
         result = runner.invoke(cli.main)
         assert result.exit_code == 0
-        assert 'otto_recsys.cli.main' in result.output
-        help_result = runner.invoke(cli.main, ['--help'])
+        assert "otto_recsys.cli.main" in result.output
+        help_result = runner.invoke(cli.main, ["--help"])
         assert help_result.exit_code == 0
-        assert '--help  Show this message and exit.' in help_result.output
+        assert "--help  Show this message and exit." in help_result.output
