@@ -5,18 +5,16 @@ import pandas as pd
 
 from tqdm import tqdm
 
-import multiprocessing as mp
-mp.set_start_method('spawn', force=True)
-
-from collections import defaultdict, Counter
+from collections import Counter
 import cudf, itertools
 
 from annoy import AnnoyIndex
-from gensim.test.utils import common_texts
 from gensim.models import Word2Vec
 
 import warnings
 warnings.filterwarnings('ignore')
+
+from utils.submit import submit_file
 
 class config:
     data_path = 'data/'
@@ -28,17 +26,17 @@ class config:
     test_file = 'test.parquet'
     test_labels_file = 'test_labels.parquet'
     submission_path = 'submissions/'
-    submission_file = 'submission_{:%Y-%m-%d_%H-%M}.csv'
-    model_path = 'models/word2vec.model'
+    submission_file = 'submission_{0}.csv'.format(time.strftime("%Y%m%d-%H%M%S"))    
+    model_path = 'models/word2vec-windowsize-20-full-data.model'
     type_labels = {'clicks':0, 'carts':1, 'orders':2}
     type_weight = {0:1, 1:6, 2:3}
     version = 1
     chunk_size = 100_000
     random_state = 42
-    fraction = 0.02
-    n_samples = 30
+    fraction = 0.002
     n_top = 15
-    diff_clicks = 24 * 60 * 60
+    n_samples = 30
+    time_diff = 24 * 60 * 60
 
 
 def load_data():
@@ -80,7 +78,18 @@ def build_index(model, n_trees=100):
         return None, None
 
 
-def process_covisitation_in_chunks(data, chunk_size):
+def get_nns(model, index, product, aid2idx, n=21):
+    """Get nearest neighbors for a given aid."""
+    try:
+        idx = aid2idx[product]
+        nns = index.get_nns_by_item(idx, n)[1:]
+        nns = [model.wv.index_to_key[idx] for idx in nns]
+    except:
+        nns = []
+    return nns
+
+
+def process_covisitation_in_chunks(data, time_diff, chunk_size, type='clicks'):
     """Process data in chunks and return a dataframe."""
     tmp = list()
     data = data.set_index('session')
@@ -88,6 +97,8 @@ def process_covisitation_in_chunks(data, chunk_size):
 
     for i in tqdm(range(0, sessions.shape[0], chunk_size)):
         df = data.loc[sessions[i]:sessions[min(sessions.shape[0]-1, i+chunk_size-1)]].reset_index()
+        if type == 'buy2buy':
+            df = df.loc[(df['type']==1)|(df['type']==2)]
         df = df.sort_values(['session','ts'],ascending=[True, False])
         df = df.reset_index(drop=True)
 
@@ -95,10 +106,18 @@ def process_covisitation_in_chunks(data, chunk_size):
         df = df.loc[df.n<config.n_samples].drop('n', axis=1)
 
         df = df.merge(df,on='session')
-        df = df.loc[ ((df.ts_x - df.ts_y).abs() < config.diff_clicks) & (df.aid_x != df.aid_y) ]
+        df = df.loc[ ((df.ts_x - df.ts_y).abs() < time_diff) & (df.aid_x != df.aid_y) ]
 
-        df = df[['session', 'aid_x', 'aid_y','ts_x']].drop_duplicates(['session', 'aid_x', 'aid_y'])
-        df['wgt'] = 1 + 3*(df.ts_x - 1659304800)/(1662328791-1659304800)
+        if type == 'clicks':
+            df = df[['session', 'aid_x', 'aid_y','ts_x']].drop_duplicates(['session', 'aid_x', 'aid_y'])
+            df['wgt'] = 1 + 3*(df.ts_x - 1659304800)/(1662328791-1659304800)
+        if type == 'carts-orders':
+            df = df[['session', 'aid_x', 'aid_y','type_y']].drop_duplicates(['session', 'aid_x', 'aid_y'])
+            df['wgt'] = df.type_y.map(config.type_weight)
+        if type == 'buy2buy':
+            df = df[['session', 'aid_x', 'aid_y','type_y']].drop_duplicates(['session', 'aid_x', 'aid_y'])
+            df['wgt'] = 1
+
         df = df[['aid_x','aid_y','wgt']]
         df.wgt = df.wgt.astype('float32')
         df = df.groupby(['aid_x','aid_y']).wgt.sum()
@@ -118,10 +137,10 @@ def combine_covisitation_chunks(tmp):
     return tmp
 
 
-def generate_combined_covisitation(data, chunk_size):
+def generate_combined_covisitation(data, chunk_size, type='clicks', time_diff=config.time_diff):
     """Generate combined covisitation."""
     print('Processing co-visitation matrix in chunks...')
-    tmp = process_covisitation_in_chunks(data, chunk_size)
+    tmp = process_covisitation_in_chunks(data, time_diff, chunk_size, type)
     tmp = combine_covisitation_chunks(tmp)
     print('Generating combined covisitation matrix...')
     tmp = tmp.groupby(['aid_x','aid_y']).wgt.sum().reset_index()
@@ -131,36 +150,29 @@ def generate_combined_covisitation(data, chunk_size):
     # we only select n products for each aid_x
     tmp = tmp.loc[tmp.n<config.n_top].drop('n',axis=1)
     df = tmp.groupby('aid_x').aid_y.apply(list)
-    save_combined_covisitation(df)
+    save_combined_covisitation(df, type)
     print('Combined covisitation matrix saved.')
+    del tmp, df
 
 
-def save_combined_covisitation(df):
+def save_combined_covisitation(df, type='clicks'):
     """Save combined covisitation."""
-    with open(config.data_path + f'top_20_v{config.version}.pkl', 'wb') as f:
+    with open(config.data_path + f'top_20_{type}_v{config.version}.pkl', 'wb') as f:
         pickle.dump(df.to_dict(), f)
 
 
-def load_combined_covisitation(test, version=config.version):
-    top_20 = pd.read_pickle(config.data_path + f'top_20_v{version}.pkl')
-
-    # TOP CLICKS AND ORDERS IN TEST
-    top_clicks = test.loc[test['type']==config.type_labels['clicks'],'aid'] \
+def get_top_clicks_orders(df):
+    top_clicks = df.loc[df['type']==config.type_labels['clicks'],'aid'] \
                           .value_counts().index.values[:20]
-    top_orders = test.loc[test['type']==config.type_labels['orders'],'aid'] \
+    top_orders = df.loc[df['type']==config.type_labels['orders'],'aid'] \
                           .value_counts().index.values[:20]
-
-    print('Size of top_20_clicks:', len(top_20))
-
-    return top_20, top_clicks, top_orders
+    return top_clicks, top_orders
 
 
-def get_nns(model, index, product, aid2idx, n=21):
-    """Get nearest neighbors for a given aid."""
-    idx = aid2idx[product]
-    nns = index.get_nns_by_item(idx, n)[1:]
-    nns = [model.wv.index_to_key[idx] for idx in nns]
-    return nns
+def load_combined_covisitation(version=config.version, type='clicks'):
+    top_20 = pd.read_pickle(config.data_path + f'top_20_{type}_v{version}.pkl')
+    print(f'Size of top_20_{type}:', len(top_20))
+    return top_20
 
 
 def suggest_clicks(df, top_20, top_clicks, model, index, aid2idx):
@@ -182,36 +194,130 @@ def suggest_clicks(df, top_20, top_clicks, model, index, aid2idx):
                     for product in unique_products if product in top_20]))
 
     if config.word2vec:
-        products = list(dict.fromkeys(products[::-1]))
-        # most_recent_product = products[0]
-        # nns = [model.wv.index_to_key[i]
-        #        for i in index.get_nns_by_item(aid2idx[most_recent_product], 21)[1:]]
         products_2 = list(itertools.chain(*[get_nns(model, index, product, aid2idx) 
                           for product in unique_products if product in top_20]))
-
-
-        top_products_1 = [product for product, _ in Counter(products_1 + products_2).most_common(50) \
+        top_word2vec = [product for product, _ in Counter(products_2).most_common(50) \
                         if product not in unique_products]
+
+        top_products = [product for product, _ in Counter(products_1).most_common(50) \
+                        if product not in unique_products]
+        result = unique_products + top_products[:20 - len(unique_products)]
+        return result + list(top_word2vec[:20 - len(result)])
     else:
-        top_products_1 = [product for product, _ in Counter(products_1).most_common(50) \
+        top_products = [product for product, _ in Counter(products_1).most_common(50) \
                         if product not in unique_products]
 
-    result = unique_products + top_products_1[:20 - len(unique_products)]
-    return result + list(top_clicks[:20 - len(result)])
+        result = unique_products + top_products[:20 - len(unique_products)]
+        return result + list(top_clicks[:20 - len(result)])
 
 
-def generate_candidates(test, top_20, top_clicks, model, index, aid2idx):
+def suggest_carts(df, top_15_buy2buy, top_15_buys, top_orders,
+                 model, index, aid2idx):
+    products = df.aid.tolist()
+    types = df.type.tolist()
+    # filter df for type 1 and 2
+    unique_products = list(dict.fromkeys(products[::-1] ))
+    df = df.loc[(df['type']==1)|(df['type']==2)]
+    unique_buys = list(dict.fromkeys(df.aid.tolist()[::-1]))
+
+    if len(unique_products) >= 20:
+        weights = np.logspace(0.5, 1, len(products), base=2, endpoint=True) - 1
+        products_tmp = Counter()
+        for product, weight, _type in zip(products, weights, types):
+            products_tmp[product] += weight * config.type_weight[_type]
+        products_1 = list(itertools.chain(*[top_15_buy2buy.get(product, []) \
+                        for product in unique_buys if product in top_15_buy2buy]))
+        for product in products_1: products_tmp[product] += 0.1
+        sorted_products = [product for product, _ in products_tmp.most_common(50)]
+        return sorted_products
+
+    products_1 = list(itertools.chain(*[top_15_buys.get(product, []) \
+                        for product in unique_products if product in top_15_buys]))
+    products_2 = list(itertools.chain(*[top_15_buy2buy.get(product, []) \
+                        for product in unique_buys if product in top_15_buy2buy]))
+    top_products = [product for product, _ in Counter(products_1 + products_2).most_common(50) \
+                    if product not in unique_products]
+    result = unique_products + top_products[:20 - len(unique_products)]
+
+    if config.word2vec:
+        products_3 = list(itertools.chain(*[get_nns(model, index, product, aid2idx) 
+                          for product in unique_products if product in top_15_buys]))
+        top_word2vec = [product for product, _ in Counter(products_3).most_common(50) \
+                        if product not in unique_products]
+        return result + list(top_word2vec[:20 - len(result)])
+
+    return result + list(top_orders[:20 - len(result)])
+
+
+def suggest_orders(df, top_15_buy2buy, top_15_buys, top_orders,
+                   model, index, aid2idx):
+    products = df.aid.tolist()
+    types = df.type.tolist()
+    # filter df for type 1 and 2
+    unique_products = list(dict.fromkeys(products[::-1] ))
+    df = df.loc[(df['type']==1)|(df['type']==2)]
+    unique_buys = list(dict.fromkeys(df.aid.tolist()[::-1]))
+    added_to_cart = list(dict.fromkeys(df.loc[df['type']==1].aid.tolist()[::-1]))
+
+    if len(unique_products) >= 20:
+        weights = np.logspace(0.5, 1, len(products), base=2, endpoint=True) - 1
+        products_tmp = Counter()
+        for product, weight, _type in zip(products, weights, types):
+            products_tmp[product] += weight * config.type_weight[_type]
+        products_1 = list(itertools.chain(*[top_15_buy2buy.get(product, []) \
+                          for product in unique_buys if product in top_15_buy2buy]))
+        for product in products_1: products_tmp[product] += 0.1
+        sorted_products = [product for product, _ in products_tmp.most_common(50)]
+        return sorted_products
+
+    products_1 = list(itertools.chain(*[top_15_buys.get(product, []) \
+                        for product in unique_products if product in top_15_buys]))
+    products_2 = list(itertools.chain(*[top_15_buy2buy.get(product, []) \
+                        for product in unique_buys if product in top_15_buy2buy]))
+    top_products = [product for product, _ in Counter(products_1 + products_2).most_common(50) \
+                    if product not in unique_products]
+
+    if added_to_cart:
+        added_to_cart = [product for product in added_to_cart \
+                         if product not in unique_products]
+        result = unique_products + added_to_cart + top_products[:20 - len(unique_products)]
+    else:
+        result = unique_products + top_products[:20 - len(unique_products)]
+
+    if config.word2vec:
+        products_3 = list(itertools.chain(*[get_nns(model, index, product, aid2idx) 
+                          for product in unique_products if product in top_15_buys]))
+        top_word2vec = [product for product, _ in Counter(products_3).most_common(50) \
+                        if product not in unique_products]
+        return result + list(top_word2vec[:20 - len(result)])
+
+    return result + list(top_orders[:20 - len(result)])
+
+
+def generate_candidates(test, covisit_clicks, covisit_carts_orders, 
+                        covisits_buy2buy, top_clicks, top_orders, 
+                        model, index, aid2idx):
     test = test.to_pandas()
 
     tqdm.pandas()
 
-    pred_df = test.sort_values(["session", "ts"]) \
-                  .groupby(["session"]) \
-                  .progress_apply(lambda x: suggest_clicks(x, top_20, top_clicks, model, index, aid2idx)) 
+    pred_df_clicks = test.sort_values(["session", "ts"]) \
+                         .groupby(["session"]) \
+                         .progress_apply(lambda x: suggest_clicks(x, covisit_clicks, top_clicks, model, index, aid2idx)) 
 
-    clicks_pred_df = pd.DataFrame(pred_df.add_suffix("_clicks"), columns=["labels"]).reset_index()
-    orders_pred_df = pd.DataFrame(pred_df.add_suffix("_orders"), columns=["labels"]).reset_index()
-    carts_pred_df = pd.DataFrame(pred_df.add_suffix("_carts"), columns=["labels"]).reset_index()
+    pred_df_carts = test.sort_values(["session", "ts"]) \
+                       .groupby(["session"]) \
+                       .progress_apply(lambda x: suggest_carts(x, covisits_buy2buy, covisit_carts_orders, top_orders,
+                                                               model, index, aid2idx))
+    pred_df_orders = test.sort_values(["session", "ts"]) \
+                         .groupby(["session"]) \
+                         .progress_apply(lambda x: suggest_orders(x, covisits_buy2buy, covisit_carts_orders, top_orders,
+                                                                model, index, aid2idx))
+        
+
+    clicks_pred_df = pd.DataFrame(pred_df_clicks.add_suffix("_clicks"), columns=["labels"]).reset_index()
+    orders_pred_df = pd.DataFrame(pred_df_orders.add_suffix("_orders"), columns=["labels"]).reset_index()
+    carts_pred_df = pd.DataFrame(pred_df_carts.add_suffix("_carts"), columns=["labels"]).reset_index()
 
     pred_df = pd.concat([clicks_pred_df, orders_pred_df, carts_pred_df])
     pred_df.columns = ["session_type", "labels"]
@@ -249,12 +355,21 @@ def compute_validation_score(pred):
 """Main module."""
 def main():
     data, test = load_data()
-    # generate_combined_covisitation(data, config.chunk_size)
-    top_20, top_clicks, top_orders = load_combined_covisitation(test)
+    generate_combined_covisitation(data, config.chunk_size)
+    generate_combined_covisitation(data, config.chunk_size, type='carts-orders')
+    generate_combined_covisitation(data, time_diff=14*24*60*60, chunk_size=config.chunk_size, type='buy2buy')
+    top_clicks, top_orders = get_top_clicks_orders(test)
+    covisit_clicks = load_combined_covisitation(type='clicks')
+    covisit_carts_orders = load_combined_covisitation(type='carts-orders')
+    covisits_buy2buy = load_combined_covisitation(type='buy2buy')
     word2vec = load_model()
     index, aid2idx = build_index(word2vec)
-    pred = generate_candidates(test, top_20, top_clicks, word2vec, index, aid2idx)
+    pred = generate_candidates(test, covisit_clicks, covisit_carts_orders, 
+                               covisits_buy2buy, top_clicks, top_orders, word2vec, index, aid2idx)
     compute_validation_score(pred)
+    if not config.local_validation:
+        submit_file(message='separate covists with word2vec',
+                    path=config.submission_path)
 
 if __name__ == '__main__':
     main()
