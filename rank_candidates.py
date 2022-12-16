@@ -1,30 +1,23 @@
 import time
-
 import numpy as np
 import pandas as pd
-
 from tqdm import tqdm
-
 from collections import Counter
 import itertools
-
 from annoy import AnnoyIndex
 from gensim.models import Word2Vec
-
 import warnings
-
 warnings.filterwarnings("ignore")
-
 from utils.submit import submit_file
-
 from pandarallel import pandarallel
-
-pandarallel.initialize(progress_bar=True, use_memory_fs=False)
+pandarallel.initialize(
+    progress_bar=True,
+)
 
 
 class config:
     data_path = "data/"
-    local_validation = True
+    local_validation = False
     debug = False
     word2vec = True
     validation_path = "data/local_validation/"
@@ -33,7 +26,7 @@ class config:
     test_labels_file = "test_labels.parquet"
     submission_path = "submissions/"
     submission_file = "submission_{0}.csv".format(time.strftime("%Y%m%d-%H%M%S"))
-    model_path = "models/word2vec-windowsize-20-full-data.model"
+    model_path = "models/word2vec-windowsize-5-vector-size-100-full-data.model"
     type_labels = {"clicks": 0, "carts": 1, "orders": 2}
     type_weight = {0: 1, 1: 6, 2: 3}
     version = 1
@@ -115,7 +108,7 @@ def load_combined_covisitation(version=config.version, type="clicks"):
     return top_20
 
 
-def suggest_clicks(df, top_20, top_clicks, model):
+def suggest_clicks(df, top_20, top_clicks):
     products = df.aid.tolist()
     types = df.type.tolist()
     unique_products = list(dict.fromkeys(products[::-1]))
@@ -157,8 +150,8 @@ def suggest_clicks(df, top_20, top_clicks, model):
             for product, _ in Counter(products_1).most_common(50)
             if product not in unique_products
         ]
-        result = unique_products + top_word2vec[: 20 - len(unique_products)]
-        return result + list(top_products[: 20 - len(result)])
+        result = unique_products + top_products[: 20 - len(unique_products)]
+        return result + list(top_word2vec[: 20 - len(result)])
     else:
         top_products = [
             product
@@ -170,7 +163,7 @@ def suggest_clicks(df, top_20, top_clicks, model):
         return result + list(top_clicks[: 20 - len(result)])
 
 
-def suggest_orders(df, top_15_buy2buy, top_15_buys, top_orders, model):
+def suggest_orders(df, top_15_buy2buy, top_15_buys, top_orders):
     products = df.aid.tolist()
     types = df.type.tolist()
     unique_products = list(dict.fromkeys(products[::-1]))
@@ -258,7 +251,6 @@ def generate_candidates(
     covisits_buy2buy,
     top_clicks,
     top_orders,
-    model
 ):
 
     tqdm.pandas()
@@ -268,21 +260,7 @@ def generate_candidates(
         .groupby(["session"])
         .parallel_apply(
             lambda x: suggest_clicks(
-                x, covisit_clicks, top_clicks, model
-            )
-        )
-    )
-
-    pred_df_carts = (
-        test.sort_values(["session", "ts"])
-        .groupby(["session"])
-        .parallel_apply(
-            lambda x: suggest_orders(
-                x,
-                covisits_buy2buy,
-                covisit_carts_orders,
-                top_orders,
-                model
+                x, covisit_clicks, top_clicks
             )
         )
     )
@@ -296,7 +274,6 @@ def generate_candidates(
                 covisits_buy2buy,
                 covisit_carts_orders,
                 top_orders,
-                model
             )
         )
     )
@@ -308,7 +285,7 @@ def generate_candidates(
         pred_df_orders.add_suffix("_orders"), columns=["labels"]
     ).reset_index()
     carts_pred_df = pd.DataFrame(
-        pred_df_carts.add_suffix("_carts"), columns=["labels"]
+        pred_df_orders.add_suffix("_carts"), columns=["labels"]
     ).reset_index()
 
     pred_df = pd.concat([clicks_pred_df, orders_pred_df, carts_pred_df])
@@ -341,6 +318,7 @@ def compute_validation_score(pred):
             test_labels["gt_count"] = test_labels.ground_truth.str.len().clip(0, 20)
             recall = test_labels["hits"].sum() / test_labels["gt_count"].sum()
             score += weights[t] * recall
+            print()
             print(f"{t} recall =", recall)
 
         print("=============")
@@ -355,10 +333,10 @@ def main():
     covisit_clicks = load_combined_covisitation(type="clicks")
     covisit_carts_orders = load_combined_covisitation(type="carts-orders")
     covisits_buy2buy = load_combined_covisitation(type="buy2buy")
-    word2vec = load_model()
     # idiotic hack to make word2vec work with parallel_apply
-    global index, aid2idx 
-    index, aid2idx = build_index(word2vec)
+    global index, aid2idx, model
+    model = load_model()
+    index, aid2idx = build_index(model)
 
     pred = generate_candidates(
         test,
@@ -367,7 +345,6 @@ def main():
         covisits_buy2buy,
         top_clicks,
         top_orders,
-        word2vec
     )
     compute_validation_score(pred)
     if not config.local_validation:

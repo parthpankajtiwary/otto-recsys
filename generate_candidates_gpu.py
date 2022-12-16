@@ -7,13 +7,12 @@ import numpy as np
 from tqdm import tqdm
 
 import warnings
-
 warnings.filterwarnings("ignore")
 
 
 class config:
     data_path = "data/"
-    local_validation = True
+    local_validation = False
     debug = False
     word2vec = False
     validation_path = "data/local_validation/"
@@ -131,7 +130,7 @@ def save_combined_covisitation(df, type="clicks"):
 
 
 def main():
-    data.test = load_data()
+    data, test = load_data()
     generate_combined_covisitation(data, config.chunk_size)
     generate_combined_covisitation(data, config.chunk_size, type="carts-orders")
     generate_combined_covisitation(
