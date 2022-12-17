@@ -7,12 +7,13 @@ import numpy as np
 from tqdm import tqdm
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 
 class config:
     data_path = "data/"
-    local_validation = False
+    local_validation = True
     debug = False
     word2vec = False
     validation_path = "data/local_validation/"
