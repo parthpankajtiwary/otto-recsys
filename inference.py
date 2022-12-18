@@ -7,9 +7,11 @@ import itertools
 from annoy import AnnoyIndex
 from gensim.models import Word2Vec
 import warnings
+
 warnings.filterwarnings("ignore")
 from utils.submit import submit_file
 from pandarallel import pandarallel
+
 pandarallel.initialize(
     progress_bar=True,
 )
@@ -17,7 +19,7 @@ pandarallel.initialize(
 
 class config:
     data_path = "data/"
-    local_validation = False
+    local_validation = True
     debug = False
     word2vec = True
     validation_path = "data/local_validation/"
@@ -258,11 +260,7 @@ def generate_candidates(
     pred_df_clicks = (
         test.sort_values(["session", "ts"])
         .groupby(["session"])
-        .parallel_apply(
-            lambda x: suggest_clicks(
-                x, covisit_clicks, top_clicks
-            )
-        )
+        .parallel_apply(lambda x: suggest_clicks(x, covisit_clicks, top_clicks))
     )
 
     pred_df_orders = (
@@ -327,6 +325,8 @@ def compute_validation_score(pred):
 
 
 """Main module."""
+
+
 def main():
     data, test = load_data()
     top_clicks, top_orders = get_top_clicks_orders(test)

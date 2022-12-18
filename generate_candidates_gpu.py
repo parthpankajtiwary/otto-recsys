@@ -71,7 +71,7 @@ def process_covisitation_in_chunks(data, time_diff, chunk_size, type="clicks"):
             df = df[["session", "aid_x", "aid_y", "ts_x"]].drop_duplicates(
                 ["session", "aid_x", "aid_y"]
             )
-            df["wgt"] = 1 + 3 * (df.ts_x - 1659304800) / (1662328791 - 1659304800)
+            df["wgt"] = (df.ts_x - 1659304800) / (1662328791 - 1659304800)
         if type == "carts-orders":
             df = df[["session", "aid_x", "aid_y", "type_y"]].drop_duplicates(
                 ["session", "aid_x", "aid_y"]
