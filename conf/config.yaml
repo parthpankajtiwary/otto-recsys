@@ -1,14 +1,15 @@
 data_path: "data/"
 validation_path: "data/local_validation/"
-debug: True
+artifact_path: "artifacts/"
+debug: False
 local_validation: True
-word2vec: False
+word2vec: True
 train_file: "train.parquet"
 test_file: "test.parquet"
 test_labels_file: "test_labels.parquet"
 submission_path: "submissions/"
-models_path: "models/"
-curr_model_path: "models/word2vec-windowsize-5-vector-size-100-full-data.model"
+model_path: "models/"
+curr_model_path: "models/word2vec.model"
 type_labels: {"clicks": 0, "carts": 1, "orders": 2}
 type_weight: {0: 1, 1: 6, 2: 3}
 version: 1
@@ -17,4 +18,8 @@ random_state: 42
 fraction: 0.002
 n_top: 15
 n_samples: 50
-time_diff: 24 * 60 * 60
+time_diff: 14 * 24 * 60 * 60
+vector_size: 100
+window: 5
+negative: 10
+workers: 12

@@ -29,7 +29,7 @@ def load_data():
     return data, test
 
 
-def process_covisitation_in_chunks(data, time_diff, chunk_size, type="clicks"):
+def process_covisitation_in_chunks(data, chunk_size, type="clicks"):
     """Process data in chunks and return a dataframe."""
     tmp = list()
     data = data.set_index("session")
@@ -48,7 +48,10 @@ def process_covisitation_in_chunks(data, time_diff, chunk_size, type="clicks"):
         df = df.loc[df.n < config.n_samples].drop("n", axis=1)
 
         df = df.merge(df, on="session")
-        df = df.loc[((df.ts_x - df.ts_y).abs() < time_diff) & (df.aid_x != df.aid_y)]
+        df = df.loc[
+            ((df.ts_x - df.ts_y).abs() < eval(config.time_diff))
+            & (df.aid_x != df.aid_y)
+        ]
 
         if type == "clicks":
             df = df[["session", "aid_x", "aid_y", "ts_x"]].drop_duplicates(
@@ -88,7 +91,7 @@ def combine_covisitation_chunks(tmp):
 def generate_combined_covisitation(data, chunk_size, type="clicks"):
     """Generate combined covisitation."""
     print("Processing co-visitation matrix in chunks...")
-    tmp = process_covisitation_in_chunks(data, eval(config.time_diff), chunk_size, type)
+    tmp = process_covisitation_in_chunks(data, chunk_size, type)
     tmp = combine_covisitation_chunks(tmp)
     print("Generating combined covisitation matrix...")
     tmp = tmp.groupby(["aid_x", "aid_y"]).wgt.sum().reset_index()
