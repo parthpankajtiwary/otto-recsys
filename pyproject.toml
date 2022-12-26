@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "otto-recsys"
+version = "0.1.0"
+description = "repository for otto-recsys kaggle competition"
+authors = ["parthtiwary <parth@cargobuild.dev>"]
+readme = "README.md"
+packages = [{include = "otto_recsys"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+tqdm = "^4.64.1"
+gensim = "^4.2.0"
+cuda-python = "^12.0.0"
+xgboost = "^1.7.2"
+scikit-learn = "^1.2.0"
+polars = "^0.15.7"
+pre-commit = "^2.20.0"
+papermill = "^2.4.0"
+numpy = "^1.24.0"
+pandas = "^1.5.2"
+matplotlib = "^3.6.2"
+pandarallel = "^1.6.3"
+kaggle = "^1.5.12"
+annoy = "^1.17.1"
+ipywidgets = "^8.0.3"
+hydra-core = "^1.3.1"
+omegaconf = "^2.3.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
