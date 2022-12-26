@@ -16,28 +16,8 @@ pandarallel.initialize(
     progress_bar=True,
 )
 
-
-class config:
-    data_path = "data/"
-    local_validation = True
-    debug = False
-    word2vec = True
-    validation_path = "data/local_validation/"
-    train_file = "train.parquet"
-    test_file = "test.parquet"
-    test_labels_file = "test_labels.parquet"
-    submission_path = "submissions/"
-    submission_file = "submission_{0}.csv".format(time.strftime("%Y%m%d-%H%M%S"))
-    model_path = "models/word2vec-windowsize-5-vector-size-100-full-data.model"
-    type_labels = {"clicks": 0, "carts": 1, "orders": 2}
-    type_weight = {0: 1, 1: 6, 2: 3}
-    version = 1
-    chunk_size = 100_000
-    random_state = 42
-    fraction = 0.002
-    n_top = 15
-    n_samples = 50
-    time_diff = 24 * 60 * 60
+import hydra
+from omegaconf import DictConfig, OmegaConf
 
 
 def load_data():
@@ -327,7 +307,10 @@ def compute_validation_score(pred):
 """Main module."""
 
 
-def main():
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def main(cfg: DictConfig) -> None:
+    global config
+    config = cfg
     data, test = load_data()
     top_clicks, top_orders = get_top_clicks_orders(test)
     covisit_clicks = load_combined_covisitation(type="clicks")
