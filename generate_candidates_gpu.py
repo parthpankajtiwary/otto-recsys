@@ -1,4 +1,4 @@
-import os, gc
+import os, gc, ast
 
 import cudf
 import pickle
@@ -10,25 +10,8 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-
-class config:
-    data_path = "data/"
-    local_validation = True
-    debug = False
-    word2vec = False
-    validation_path = "data/local_validation/"
-    train_file = "train.parquet"
-    test_file = "test.parquet"
-    test_labels_file = "test_labels.parquet"
-    type_labels = {"clicks": 0, "carts": 1, "orders": 2}
-    type_weight = {0: 1, 1: 6, 2: 3}
-    version = 1
-    chunk_size = 100_000
-    random_state = 42
-    fraction = 0.002
-    n_top = 15
-    n_samples = 50
-    time_diff = 24 * 60 * 60
+import hydra
+from omegaconf import DictConfig, OmegaConf
 
 
 def load_data():
@@ -76,7 +59,7 @@ def process_covisitation_in_chunks(data, time_diff, chunk_size, type="clicks"):
             df = df[["session", "aid_x", "aid_y", "type_y"]].drop_duplicates(
                 ["session", "aid_x", "aid_y"]
             )
-            df["wgt"] = df.type_y.map(config.type_weight)
+            df["wgt"] = df.type_y.map(eval(str(config.type_weight)))
         if type == "buy2buy":
             df = df[["session", "aid_x", "aid_y", "type_y"]].drop_duplicates(
                 ["session", "aid_x", "aid_y"]
@@ -102,12 +85,10 @@ def combine_covisitation_chunks(tmp):
     return tmp
 
 
-def generate_combined_covisitation(
-    data, chunk_size, type="clicks", time_diff=config.time_diff
-):
+def generate_combined_covisitation(data, chunk_size, type="clicks"):
     """Generate combined covisitation."""
     print("Processing co-visitation matrix in chunks...")
-    tmp = process_covisitation_in_chunks(data, time_diff, chunk_size, type)
+    tmp = process_covisitation_in_chunks(data, eval(config.time_diff), chunk_size, type)
     tmp = combine_covisitation_chunks(tmp)
     print("Generating combined covisitation matrix...")
     tmp = tmp.groupby(["aid_x", "aid_y"]).wgt.sum().reset_index()
@@ -130,13 +111,14 @@ def save_combined_covisitation(df, type="clicks"):
 """Main module."""
 
 
-def main():
-    data, test = load_data()
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def main(cfg: DictConfig) -> None:
+    global config
+    config = cfg
+    data, _ = load_data()
     generate_combined_covisitation(data, config.chunk_size)
     generate_combined_covisitation(data, config.chunk_size, type="carts-orders")
-    generate_combined_covisitation(
-        data, time_diff=14 * 24 * 60 * 60, chunk_size=config.chunk_size, type="buy2buy"
-    )
+    generate_combined_covisitation(data, chunk_size=config.chunk_size, type="buy2buy")
 
 
 if __name__ == "__main__":
