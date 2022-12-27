@@ -3,6 +3,7 @@ import os, gc, ast
 import cudf
 import pickle
 import pandas as pd
+import polars as pl
 import numpy as np
 from tqdm import tqdm
 
@@ -43,27 +44,33 @@ def process_covisitation_in_chunks(data, chunk_size, type="clicks"):
             df = df.loc[(df["type"] == 1) | (df["type"] == 2)]
         df = df.sort_values(["session", "ts"], ascending=[True, False])
         df = df.reset_index(drop=True)
-
         df["n"] = df.groupby("session").cumcount()
         df = df.loc[df.n < config.n_samples].drop("n", axis=1)
-
         df = df.merge(df, on="session")
-        df = df.loc[
-            ((df.ts_x - df.ts_y).abs() < eval(config.time_diff))
-            & (df.aid_x != df.aid_y)
-        ]
 
         if type == "clicks":
+            df = df.loc[
+                ((df.ts_x - df.ts_y).abs() < eval(config.time_diff) // 7)
+                & (df.aid_x != df.aid_y)
+            ]
             df = df[["session", "aid_x", "aid_y", "ts_x"]].drop_duplicates(
                 ["session", "aid_x", "aid_y"]
             )
             df["wgt"] = (df.ts_x - 1659304800) / (1662328791 - 1659304800)
         if type == "carts-orders":
+            df = df.loc[
+                ((df.ts_x - df.ts_y).abs() < eval(config.time_diff) // 7)
+                & (df.aid_x != df.aid_y)
+            ]
             df = df[["session", "aid_x", "aid_y", "type_y"]].drop_duplicates(
                 ["session", "aid_x", "aid_y"]
             )
             df["wgt"] = df.type_y.map(eval(str(config.type_weight)))
         if type == "buy2buy":
+            df = df.loc[
+                ((df.ts_x - df.ts_y).abs() < eval(config.time_diff))
+                & (df.aid_x != df.aid_y)
+            ]
             df = df[["session", "aid_x", "aid_y", "type_y"]].drop_duplicates(
                 ["session", "aid_x", "aid_y"]
             )
@@ -83,8 +90,8 @@ def process_covisitation_in_chunks(data, chunk_size, type="clicks"):
 
 def combine_covisitation_chunks(tmp):
     """Combine covisitation chunks and return a dataframe."""
-    tmp = list(map(lambda x: x.to_pandas(), tmp))
-    tmp = pd.concat(tmp)
+    tmp = list(map(lambda x: pl.DataFrame(x.to_pandas()), tmp))
+    tmp = pl.concat(tmp)
     return tmp
 
 
@@ -94,7 +101,12 @@ def generate_combined_covisitation(data, chunk_size, type="clicks"):
     tmp = process_covisitation_in_chunks(data, chunk_size, type)
     tmp = combine_covisitation_chunks(tmp)
     print("Generating combined covisitation matrix...")
-    tmp = tmp.groupby(["aid_x", "aid_y"]).wgt.sum().reset_index()
+    tmp = (
+        (tmp.groupby(["aid_x", "aid_y"]).agg(pl.col("wgt").sum()))
+        .to_pandas()
+        .reset_index()
+    )
+    # tmp = tmp.groupby(["aid_x", "aid_y"]).wgt.sum().reset_index()
     tmp = tmp.sort_values(["aid_x", "wgt"], ascending=[True, False])
     tmp = tmp.reset_index(drop=True)
     tmp["n"] = tmp.groupby("aid_x").aid_y.cumcount()
