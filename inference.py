@@ -112,13 +112,19 @@ def suggest_clicks(df, top_20, top_clicks):
         )
     )
 
+    top_products = [
+        product
+        for product, _ in Counter(products_1).most_common(50)
+        if product not in unique_products
+    ]
+
     if config.word2vec:
         products_2 = list(
             itertools.chain(
                 *[
                     get_nns(model, index, product, aid2idx)
-                    for product in unique_products
-                    if product in top_20
+                    for product in top_products[: config.n_recent]
+                    + unique_products[: config.n_recent]
                 ]
             )
         )
@@ -127,21 +133,9 @@ def suggest_clicks(df, top_20, top_clicks):
             for product, _ in Counter(products_2).most_common(50)
             if product not in unique_products
         ]
-
-        top_products = [
-            product
-            for product, _ in Counter(products_1).most_common(50)
-            if product not in unique_products
-        ]
         result = unique_products + top_products[: 20 - len(unique_products)]
         return result + list(top_word2vec[: 20 - len(result)])
     else:
-        top_products = [
-            product
-            for product, _ in Counter(products_1).most_common(50)
-            if product not in unique_products
-        ]
-
         result = unique_products + top_products[: 20 - len(unique_products)]
         return result + list(top_clicks[: 20 - len(result)])
 
@@ -152,7 +146,6 @@ def suggest_orders(df, top_15_buy2buy, top_15_buys, top_orders):
     unique_products = list(dict.fromkeys(products[::-1]))
     df = df.loc[(df["type"] == 1) | (df["type"] == 2)]
     unique_buys = list(dict.fromkeys(df.aid.tolist()[::-1]))
-    added_to_cart = list(dict.fromkeys(df.loc[df["type"] == 1].aid.tolist()[::-1]))
 
     if len(unique_products) >= 20:
         weights = np.logspace(0.5, 1, len(products), base=2, endpoint=True) - 1
@@ -197,23 +190,15 @@ def suggest_orders(df, top_15_buy2buy, top_15_buys, top_orders):
         if product not in unique_products
     ]
 
-    if added_to_cart:
-        added_to_cart = [
-            product for product in added_to_cart if product not in unique_products
-        ]
-        result = (
-            unique_products + added_to_cart + top_products[: 20 - len(unique_products)]
-        )
-    else:
-        result = unique_products + top_products[: 20 - len(unique_products)]
+    result = unique_products + top_products[: 20 - len(unique_products)]
 
     if config.word2vec:
         products_3 = list(
             itertools.chain(
                 *[
                     get_nns(model, index, product, aid2idx)
-                    for product in unique_products
-                    if product in top_15_buys
+                    for product in top_products[: config.n_recent]
+                    + unique_products[: config.n_recent]
                 ]
             )
         )
@@ -223,8 +208,8 @@ def suggest_orders(df, top_15_buy2buy, top_15_buys, top_orders):
             if product not in unique_products
         ]
         return result + list(top_word2vec[: 20 - len(result)])
-
-    return result + list(top_orders[: 20 - len(result)])
+    else:
+        return result + list(top_orders[: 20 - len(result)])
 
 
 def generate_candidates(
