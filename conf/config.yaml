@@ -13,13 +13,15 @@ curr_model_path: "models/word2vec.model"
 type_labels: {"clicks": 0, "carts": 1, "orders": 2}
 type_weight: {0: 1, 1: 6, 2: 3}
 version: 1
-chunk_size: 100_000
+chunk_size: 200_000
 random_state: 42
 fraction: 0.002
 n_top: 15
 n_samples: 50
-time_diff: 14 * 24 * 60 * 60
+time_diff: 7 * 24 * 60 * 60
 vector_size: 100
 window: 5
 negative: 10
 workers: 12
+epochs: 2
+min_count: 2

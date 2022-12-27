@@ -40,6 +40,7 @@ def load_model():
     if config.word2vec:
         print("Loading word2vec model...")
         model = Word2Vec.load(config.model_path + "word2vec.model")
+        print("Model loaded from path: ", config.model_path + "word2vec.model")
         return model
     else:
         return None
@@ -48,16 +49,13 @@ def load_model():
 def build_index(model, n_trees=100):
     """Build index for word2vec model."""
     if config.word2vec:
-        try:
-            print("Loading index for word2vec model...")
-        except:
-            print("Building index for word2vec model...")
-            aid2idx = {aid: i for i, aid in enumerate(model.wv.index_to_key)}
-            index = AnnoyIndex(model.wv.vector_size, metric="euclidean")
-            for aid, idx in aid2idx.items():
-                index.add_item(idx, model.wv.vectors[idx])
-            index.build(n_trees=n_trees)
-            return index, aid2idx
+        print("Building index for word2vec model...")
+        aid2idx = {aid: i for i, aid in enumerate(model.wv.index_to_key)}
+        index = AnnoyIndex(model.wv.vector_size, metric="euclidean")
+        for aid, idx in aid2idx.items():
+            index.add_item(idx, model.wv.vectors[idx])
+        index.build(n_trees=n_trees)
+        return index, aid2idx
     else:
         return None, None
 

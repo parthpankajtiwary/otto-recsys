@@ -32,6 +32,8 @@ def train_word2vec_model(sentences: pl.DataFrame) -> None:
         window=config.window,
         negative=config.negative,
         workers=config.workers,
+        epochs=config.epochs,
+        min_count=config.min_count,
     )
     model.save(config.model_path + "word2vec.model")
     print("Word2vec model saved to: " + config.model_path + "word2vec.model")
