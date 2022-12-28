@@ -1,13 +1,11 @@
-import numpy as np
-import polars as pl
-
+from collections import Counter, defaultdict
 from typing import Tuple
-from collections import defaultdict, Counter
-
-from gensim.test.utils import common_texts
-from gensim.models import Word2Vec
 
 import hydra
+import numpy as np
+import polars as pl
+from gensim.models import Word2Vec
+from gensim.test.utils import common_texts
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -19,9 +17,7 @@ def create_sentences(
         pl.concat([train, test]).groupby("session").agg(pl.col("aid").alias("sentence"))
     )
     sentences = sentences_df["sentence"].to_list()
-    if config.debug:
-        return sentences[:100]
-    return sentences
+    return sentences[:100] if config.debug else sentences
 
 
 def train_word2vec_model(sentences: pl.DataFrame) -> None:
@@ -35,8 +31,8 @@ def train_word2vec_model(sentences: pl.DataFrame) -> None:
         epochs=config.epochs,
         min_count=config.min_count,
     )
-    model.save(config.model_path + "word2vec.model")
-    print("Word2vec model saved to: " + config.model_path + "word2vec.model")
+    model.save(f"{config.model_path}word2vec.model")
+    print(f"Word2vec model saved to: {config.model_path}word2vec.model")
 
 
 def load_data() -> Tuple[pl.DataFrame, pl.DataFrame]:
@@ -53,7 +49,7 @@ def load_data() -> Tuple[pl.DataFrame, pl.DataFrame]:
 """Main module."""
 
 
-@hydra.main(version_base=None, config_path="conf", config_name="config")
+@hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     global config
     config = cfg
