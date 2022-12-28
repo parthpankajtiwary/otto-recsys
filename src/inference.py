@@ -18,9 +18,10 @@ pandarallel.initialize(
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
+from typing import Dict, List, Tuple
 
 
-def load_data():
+def load_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Load data from parquet files."""
     if config.local_validation:
         train = pd.read_parquet(config.validation_path + config.train_file)
@@ -46,7 +47,7 @@ def load_model():
         return None
 
 
-def build_index(model, n_trees=100):
+def build_index(model, n_trees=100) -> Tuple[AnnoyIndex, Dict[str, int]]:
     """Build index for word2vec model."""
     if config.word2vec:
         print("Building index for word2vec model...")
@@ -60,7 +61,13 @@ def build_index(model, n_trees=100):
         return None, None
 
 
-def get_nns(model, index, product, aid2idx, n=21):
+def get_nns(
+    model: Word2Vec,
+    index: AnnoyIndex,
+    product: str,
+    aid2idx: Dict[str, int],
+    n: int = 21,
+) -> List[str]:
     """Get nearest neighbors for a given aid."""
     try:
         idx = aid2idx[product]
@@ -71,7 +78,7 @@ def get_nns(model, index, product, aid2idx, n=21):
     return nns
 
 
-def get_top_clicks_orders(df):
+def get_top_clicks_orders(df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
     top_clicks = (
         df.loc[df["type"] == config.type_labels["clicks"], "aid"]
         .value_counts()
@@ -85,13 +92,15 @@ def get_top_clicks_orders(df):
     return top_clicks, top_orders
 
 
-def load_combined_covisitation(type="clicks"):
+def load_combined_covisitation(type: str = "clicks") -> pd.DataFrame:
     top_20 = pd.read_pickle(config.data_path + f"top_20_{type}_v{config.version}.pkl")
     print(f"Size of top_20_{type}:", len(top_20))
     return top_20
 
 
-def suggest_clicks(df, top_20, top_clicks):
+def suggest_clicks(
+    df: pd.DataFrame, top_20: List[str], top_clicks: List[str]
+) -> List[str]:
     products = df.aid.tolist()
     types = df.type.tolist()
     unique_products = list(dict.fromkeys(products[::-1]))
@@ -140,7 +149,12 @@ def suggest_clicks(df, top_20, top_clicks):
         return result + list(top_clicks[: 20 - len(result)])
 
 
-def suggest_orders(df, top_15_buy2buy, top_15_buys, top_orders):
+def suggest_orders(
+    df: pd.DataFrame,
+    top_15_buy2buy: pd.DataFrame,
+    top_15_buys: pd.DataFrame,
+    top_orders: List[str],
+) -> List[str]:
     products = df.aid.tolist()
     types = df.type.tolist()
     unique_products = list(dict.fromkeys(products[::-1]))
@@ -213,13 +227,13 @@ def suggest_orders(df, top_15_buy2buy, top_15_buys, top_orders):
 
 
 def generate_candidates(
-    test,
-    covisit_clicks,
-    covisit_carts_orders,
-    covisits_buy2buy,
-    top_clicks,
-    top_orders,
-):
+    test: pd.DataFrame,
+    covisit_clicks: pd.DataFrame,
+    covisit_carts_orders: pd.DataFrame,
+    covisits_buy2buy: pd.DataFrame,
+    top_clicks: pd.DataFrame,
+    top_orders: pd.DataFrame,
+) -> pd.DataFrame:
 
     tqdm.pandas()
 
@@ -262,15 +276,15 @@ def generate_candidates(
     return pred_df
 
 
-def compute_validation_score(pred):
+def compute_validation_score(pred: pd.DataFrame) -> float:
     if config.local_validation:
         score = 0
         weights = {"clicks": 0.10, "carts": 0.30, "orders": 0.60}
         for t in ["clicks", "carts", "orders"]:
-            sub = pred.loc[pred.session_type.str.contains(t)].copy()
+            sub: pd.DataFrame = pred.loc[pred.session_type.str.contains(t)].copy()
             sub["session"] = sub.session_type.apply(lambda x: int(x.split("_")[0]))
             sub.labels = sub.labels.apply(lambda x: [int(i) for i in x.split(" ")[:20]])
-            test_labels = pd.read_parquet(
+            test_labels: pd.DataFrame = pd.read_parquet(
                 config.validation_path + config.test_labels_file
             )
             test_labels = test_labels.loc[test_labels["type"] == t]

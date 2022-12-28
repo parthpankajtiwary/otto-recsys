@@ -1,4 +1,5 @@
 import os, gc, ast
+from typing import List, Tuple
 
 import cudf
 import pickle
@@ -15,7 +16,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 
-def load_data():
+def load_data() -> pd.DataFrame:
     """Load data from parquet files."""
     if config.local_validation:
         train = cudf.read_parquet(config.validation_path + config.train_file)
@@ -30,7 +31,9 @@ def load_data():
     return data, test
 
 
-def process_covisitation_in_chunks(data, chunk_size, type="clicks"):
+def process_covisitation_in_chunks(
+    data: pd.DataFrame, chunk_size: int, type: str = "clicks"
+) -> pd.DataFrame:
     """Process data in chunks and return a dataframe."""
     tmp = list()
     data = data.set_index("session")
@@ -88,14 +91,16 @@ def process_covisitation_in_chunks(data, chunk_size, type="clicks"):
     return tmp
 
 
-def combine_covisitation_chunks(tmp):
+def combine_covisitation_chunks(tmp: List[Tuple[str, str, int]]):
     """Combine covisitation chunks and return a dataframe."""
     tmp = list(map(lambda x: pl.DataFrame(x.to_pandas()), tmp))
     tmp = pl.concat(tmp)
     return tmp
 
 
-def generate_combined_covisitation(data, chunk_size, type="clicks"):
+def generate_combined_covisitation(
+    data: pd.DataFrame, chunk_size: int, type="clicks"
+) -> None:
     """Generate combined covisitation."""
     print("Processing co-visitation matrix in chunks...")
     tmp = process_covisitation_in_chunks(data, chunk_size, type)
@@ -117,7 +122,7 @@ def generate_combined_covisitation(data, chunk_size, type="clicks"):
     del tmp, df
 
 
-def save_combined_covisitation(df, type="clicks"):
+def save_combined_covisitation(df: pd.DataFrame, type="clicks") -> None:
     """Save combined covisitation."""
     with open(config.data_path + f"top_20_{type}_v{config.version}.pkl", "wb") as f:
         pickle.dump(df.to_dict(), f)

@@ -1,0 +1,9 @@
+#!/bin/bash
+set -e
+python create_covisits_gpu.py local_validation=True
+python train_word2vec_model.py local_validation=True
+python create_candidates_dataframe.py local_validation=True
+python add_ground_truth_candidates_df.py local_validation=True
+python create_user_item_features.py local_validation=True
+python merge_candidate_df_with_user_item_features.py local_validation=True
+python train_ranker_model.py local_validation=True
