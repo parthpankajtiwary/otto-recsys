@@ -1,14 +1,15 @@
-import os, gc, ast
+import ast
+import gc
+import os
+import pickle
+import warnings
 from typing import List, Tuple
 
 import cudf
-import pickle
+import numpy as np
 import pandas as pd
 import polars as pl
-import numpy as np
 from tqdm import tqdm
-
-import warnings
 
 warnings.filterwarnings("ignore")
 
@@ -21,11 +22,10 @@ def load_data() -> pd.DataFrame:
     if config.local_validation:
         train = cudf.read_parquet(config.validation_path + config.train_file)
         test = cudf.read_parquet(config.validation_path + config.test_file)
-        data = cudf.concat([train, test])
     else:
         train = cudf.read_parquet(config.data_path + config.train_file)
         test = cudf.read_parquet(config.data_path + config.test_file)
-        data = cudf.concat([train, test])
+    data = cudf.concat([train, test])
     if config.debug:
         data = data.sample(frac=config.fraction, random_state=config.random_state)
     return data, test
@@ -35,7 +35,7 @@ def process_covisitation_in_chunks(
     data: pd.DataFrame, chunk_size: int, type: str = "clicks"
 ) -> pd.DataFrame:
     """Process data in chunks and return a dataframe."""
-    tmp = list()
+    tmp = []
     data = data.set_index("session")
     sessions = data.index.unique()
 
@@ -51,24 +51,6 @@ def process_covisitation_in_chunks(
         df = df.loc[df.n < config.n_samples].drop("n", axis=1)
         df = df.merge(df, on="session")
 
-        if type == "clicks":
-            df = df.loc[
-                ((df.ts_x - df.ts_y).abs() < eval(config.time_diff) // 7)
-                & (df.aid_x != df.aid_y)
-            ]
-            df = df[["session", "aid_x", "aid_y", "ts_x"]].drop_duplicates(
-                ["session", "aid_x", "aid_y"]
-            )
-            df["wgt"] = (df.ts_x - 1659304800) / (1662328791 - 1659304800)
-        if type == "carts-orders":
-            df = df.loc[
-                ((df.ts_x - df.ts_y).abs() < eval(config.time_diff) // 7)
-                & (df.aid_x != df.aid_y)
-            ]
-            df = df[["session", "aid_x", "aid_y", "type_y"]].drop_duplicates(
-                ["session", "aid_x", "aid_y"]
-            )
-            df["wgt"] = df.type_y.map(eval(str(config.type_weight)))
         if type == "buy2buy":
             df = df.loc[
                 ((df.ts_x - df.ts_y).abs() < eval(config.time_diff))
@@ -79,6 +61,24 @@ def process_covisitation_in_chunks(
             )
             df["wgt"] = 1
 
+        elif type == "carts-orders":
+            df = df.loc[
+                ((df.ts_x - df.ts_y).abs() < eval(config.time_diff) // 7)
+                & (df.aid_x != df.aid_y)
+            ]
+            df = df[["session", "aid_x", "aid_y", "type_y"]].drop_duplicates(
+                ["session", "aid_x", "aid_y"]
+            )
+            df["wgt"] = df.type_y.map(eval(str(config.type_weight)))
+        elif type == "clicks":
+            df = df.loc[
+                ((df.ts_x - df.ts_y).abs() < eval(config.time_diff) // 7)
+                & (df.aid_x != df.aid_y)
+            ]
+            df = df[["session", "aid_x", "aid_y", "ts_x"]].drop_duplicates(
+                ["session", "aid_x", "aid_y"]
+            )
+            df["wgt"] = (df.ts_x - 1659304800) / (1662328791 - 1659304800)
         df = df[["aid_x", "aid_y", "wgt"]]
         df.wgt = df.wgt.astype("float32")
         df = df.groupby(["aid_x", "aid_y"]).wgt.sum()
@@ -111,11 +111,13 @@ def generate_combined_covisitation(
         .to_pandas()
         .reset_index()
     )
-    # tmp = tmp.groupby(["aid_x", "aid_y"]).wgt.sum().reset_index()
     tmp = tmp.sort_values(["aid_x", "wgt"], ascending=[True, False])
     tmp = tmp.reset_index(drop=True)
     tmp["n"] = tmp.groupby("aid_x").aid_y.cumcount()
-    tmp = tmp.loc[tmp.n < config.n_top].drop("n", axis=1)
+    if type == "clicks":
+        tmp = tmp.loc[tmp.n < config.n_top_clicks].drop("n", axis=1)
+    else:
+        tmp = tmp.loc[tmp.n < config.n_top].drop("n", axis=1)
     df = tmp.groupby("aid_x").aid_y.apply(list)
     save_combined_covisitation(df, type)
     print("Combined covisitation matrix saved.")
@@ -131,7 +133,7 @@ def save_combined_covisitation(df: pd.DataFrame, type="clicks") -> None:
 """Main module."""
 
 
-@hydra.main(version_base=None, config_path="conf", config_name="config")
+@hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     global config
     config = cfg

@@ -16,9 +16,11 @@ version: 1
 chunk_size: 200_000
 random_state: 42
 fraction: 0.002
-n_top: 20
+n_top: 15
+n_top_clicks: 20
 n_samples: 50
 time_diff: 7 * 24 * 60 * 60
+one_week: 7 * 24 * 60 * 60
 vector_size: 100
 window: 500
 negative: 20

@@ -1,9 +1,9 @@
-import pandas as pd
-import numpy as np
-import polars as pl
 from typing import Tuple
 
 import hydra
+import numpy as np
+import pandas as pd
+import polars as pl
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -239,7 +239,7 @@ def load_data() -> Tuple[pl.DataFrame, pl.DataFrame]:
 """Main module."""
 
 
-@hydra.main(version_base=None, config_path="conf", config_name="config")
+@hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     global config
     config = cfg

@@ -1,24 +1,26 @@
+import itertools
 import time
+import warnings
+from collections import Counter
+
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
-from collections import Counter
-import itertools
 from annoy import AnnoyIndex
 from gensim.models import Word2Vec
-import warnings
+from tqdm import tqdm
 
 warnings.filterwarnings("ignore")
-from utils.submit import submit_file
+
 from pandarallel import pandarallel
 
 pandarallel.initialize(
     progress_bar=True,
 )
 
+from typing import Dict, List, Tuple
+
 import hydra
 from omegaconf import DictConfig, OmegaConf
-from typing import Dict, List, Tuple
 
 
 def load_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -26,11 +28,10 @@ def load_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
     if config.local_validation:
         train = pd.read_parquet(config.validation_path + config.train_file)
         test = pd.read_parquet(config.validation_path + config.test_file)
-        data = pd.concat([train, test])
     else:
         train = pd.read_parquet(config.data_path + config.train_file)
         test = pd.read_parquet(config.data_path + config.test_file)
-        data = pd.concat([train, test])
+    data = pd.concat([train, test])
     if config.debug:
         data = data.sample(frac=config.fraction, random_state=config.random_state)
     return data, test
@@ -38,13 +39,12 @@ def load_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
 
 def load_model():
     """Load word2vec model."""
-    if config.word2vec:
-        print("Loading word2vec model...")
-        model = Word2Vec.load(config.model_path + "word2vec.model")
-        print("Model loaded from path: ", config.model_path + "word2vec.model")
-        return model
-    else:
+    if not config.word2vec:
         return None
+    print("Loading word2vec model...")
+    model = Word2Vec.load(config.model_path + "word2vec.model")
+    print("Model loaded from path: ", config.model_path + "word2vec.model")
+    return model
 
 
 def build_index(model, n_trees=100) -> Tuple[AnnoyIndex, Dict[str, int]]:
@@ -53,7 +53,7 @@ def build_index(model, n_trees=100) -> Tuple[AnnoyIndex, Dict[str, int]]:
         print("Building index for word2vec model...")
         aid2idx = {aid: i for i, aid in enumerate(model.wv.index_to_key)}
         index = AnnoyIndex(model.wv.vector_size, metric="euclidean")
-        for aid, idx in aid2idx.items():
+        for idx in aid2idx.values():
             index.add_item(idx, model.wv.vectors[idx])
         index.build(n_trees=n_trees)
         return index, aid2idx
@@ -73,7 +73,7 @@ def get_nns(
         idx = aid2idx[product]
         nns = index.get_nns_by_item(idx, n)[1:]
         nns = [model.wv.index_to_key[idx] for idx in nns]
-    except:
+    except Exception:
         nns = []
     return nns
 
@@ -112,8 +112,7 @@ def suggest_clicks(
         for product, weight, _type in zip(products, weights, types):
             products_tmp[product] += weight * config.type_weight[_type]
 
-        sorted_products = [product for product, _ in products_tmp.most_common(50)]
-        return sorted_products
+        return [product for product, _ in products_tmp.most_common(50)]
 
     products_1 = list(
         itertools.chain(
@@ -155,6 +154,7 @@ def suggest_orders(
     top_15_buys: pd.DataFrame,
     top_orders: List[str],
 ) -> List[str]:
+    # sourcery skip: extract-method, inline-immediately-returned-variable
     products = df.aid.tolist()
     types = df.type.tolist()
     unique_products = list(dict.fromkeys(products[::-1]))
@@ -206,24 +206,23 @@ def suggest_orders(
 
     result = unique_products + top_products[: 20 - len(unique_products)]
 
-    if config.word2vec:
-        products_3 = list(
-            itertools.chain(
-                *[
-                    get_nns(model, index, product, aid2idx)
-                    for product in top_products[: config.n_recent]
-                    + unique_products[: config.n_recent]
-                ]
-            )
-        )
-        top_word2vec = [
-            product
-            for product, _ in Counter(products_3).most_common(50)
-            if product not in unique_products
-        ]
-        return result + list(top_word2vec[: 20 - len(result)])
-    else:
+    if not config.word2vec:
         return result + list(top_orders[: 20 - len(result)])
+    products_3 = list(
+        itertools.chain(
+            *[
+                get_nns(model, index, product, aid2idx)
+                for product in top_products[: config.n_recent]
+                + unique_products[: config.n_recent]
+            ]
+        )
+    )
+    top_word2vec = [
+        product
+        for product, _ in Counter(products_3).most_common(50)
+        if product not in unique_products
+    ]
+    return result + list(top_word2vec[: 20 - len(result)])
 
 
 def generate_candidates(
@@ -242,7 +241,6 @@ def generate_candidates(
         .groupby(["session"])
         .parallel_apply(lambda x: suggest_clicks(x, covisit_clicks, top_clicks))
     )
-
     pred_df_orders = (
         test.sort_values(["session", "ts"])
         .groupby(["session"])
@@ -255,7 +253,6 @@ def generate_candidates(
             )
         )
     )
-
     clicks_pred_df = pd.DataFrame(
         pred_df_clicks.add_suffix("_clicks"), columns=["labels"]
     ).reset_index()
@@ -307,7 +304,7 @@ def compute_validation_score(pred: pd.DataFrame) -> float:
 """Main module."""
 
 
-@hydra.main(version_base=None, config_path="conf", config_name="config")
+@hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     global config
     config = cfg
@@ -330,10 +327,10 @@ def main(cfg: DictConfig) -> None:
         top_orders,
     )
     compute_validation_score(pred)
-    if not config.local_validation:
-        submit_file(
-            message="separate covists with word2vec", path=config.submission_path
-        )
+    # if not config.local_validation:
+    #     submit_file(
+    #         message="separate covists with word2vec", path=config.submission_path
+    #     )
 
 
 if __name__ == "__main__":
