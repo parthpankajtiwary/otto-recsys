@@ -7,7 +7,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 
-def create_user_features(train, test) -> None:
+def create_user_features(train: pl.DataFrame, test: pl.DataFrame) -> None:
     data = test
     data = convert_seconds_to_milliseconds(data)
     data = create_user_recency_features(data)
@@ -15,7 +15,7 @@ def create_user_features(train, test) -> None:
     data.write_parquet(config.artifact_path + "user_features.parquet")
 
 
-def create_item_features(train, test) -> None:
+def create_item_features(train: pl.DataFrame, test: pl.DataFrame) -> None:
     data = pl.concat([train, test])
     data = convert_seconds_to_milliseconds(data)
     df_recency_features = create_item_recency_features(data)

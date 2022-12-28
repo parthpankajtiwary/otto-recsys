@@ -1,7 +1,7 @@
 # OTTO-RecSys Implementation Log
 
-Ideas to implement:
-- Baseline - done
-    - Co-visitation matrix - done
-- Word2vec implementation - done
-- Ranking model - in progress
+Notes:
+- Adding NNs for n_recent top_products + unique products leads to better recall
+    - for clicks
+    - for orders
+- Including some recency mechanism for orders and carts co-visitation might be worth considering
