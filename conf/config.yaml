@@ -2,12 +2,13 @@ data_path: "data/"
 validation_path: "data/local_validation/"
 artifact_path: "artifacts/"
 debug: False
-local_validation: True
+local_validation: False
 word2vec: True
 train_file: "train.parquet"
 test_file: "test.parquet"
 test_labels_file: "test_labels.parquet"
 submission_path: "submissions/"
+submission_file: "submission.csv"
 model_path: "models/"
 curr_model_path: "models/word2vec.model"
 type_labels: {"clicks": 0, "carts": 1, "orders": 2}
@@ -22,7 +23,7 @@ n_samples: 50
 time_diff: 7 * 24 * 60 * 60
 one_week: 7 * 24 * 60 * 60
 vector_size: 100
-window: 500
+window: 5
 negative: 20
 workers: 12
 epochs: 2

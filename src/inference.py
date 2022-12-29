@@ -8,19 +8,17 @@ import pandas as pd
 from annoy import AnnoyIndex
 from gensim.models import Word2Vec
 from tqdm import tqdm
-
 warnings.filterwarnings("ignore")
-
 from pandarallel import pandarallel
-
 pandarallel.initialize(
     progress_bar=True,
+    nb_workers=10,
 )
-
 from typing import Dict, List, Tuple
-
 import hydra
 from omegaconf import DictConfig, OmegaConf
+
+import neptune.new as neptune
 
 
 def load_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -234,8 +232,6 @@ def generate_candidates(
     top_orders: pd.DataFrame,
 ) -> pd.DataFrame:
 
-    tqdm.pandas()
-
     pred_df_clicks = (
         test.sort_values(["session", "ts"])
         .groupby(["session"])
@@ -295,10 +291,12 @@ def compute_validation_score(pred: pd.DataFrame) -> float:
             score += weights[t] * recall
             print()
             print(f"{t} recall =", recall)
+            run[f"{t} recall"] = recall
 
         print("=============")
         print("Overall Recall =", score)
         print("=============")
+        run["overall recall"] = score
 
 
 """Main module."""
@@ -306,8 +304,10 @@ def compute_validation_score(pred: pd.DataFrame) -> float:
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig) -> None:
-    global config
+    global config, run
     config = cfg
+    run = neptune.init_run()
+    run["config"] = config
     data, test = load_data()
     top_clicks, top_orders = get_top_clicks_orders(test)
     covisit_clicks = load_combined_covisitation(type="clicks")
