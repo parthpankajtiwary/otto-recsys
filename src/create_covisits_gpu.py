@@ -38,6 +38,7 @@ def process_covisitation_in_chunks(
     tmp = []
     data = data.set_index("session")
     sessions = data.index.unique()
+    _min, _max = data.ts.min(), data.ts.max()
 
     for i in tqdm(range(0, sessions.shape[0], chunk_size)):
         df = data.loc[
@@ -78,7 +79,7 @@ def process_covisitation_in_chunks(
             df = df[["session", "aid_x", "aid_y", "ts_x"]].drop_duplicates(
                 ["session", "aid_x", "aid_y"]
             )
-            df["wgt"] = (df.ts_x - 1659304800) / (1662328791 - 1659304800)
+            df["wgt"] = 1 + 3 * ((df.ts_x - _min) / (_max - _min))
         df = df[["aid_x", "aid_y", "wgt"]]
         df.wgt = df.wgt.astype("float32")
         df = df.groupby(["aid_x", "aid_y"]).wgt.sum()
