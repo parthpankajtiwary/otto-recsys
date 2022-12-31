@@ -58,7 +58,7 @@ def process_covisitation_in_chunks(
                 & (df.aid_x != df.aid_y)
             ]
             df = df[["session", "aid_x", "aid_y", "type_y"]].drop_duplicates(
-                ["session", "aid_x", "aid_y"]
+                ["session", "aid_x", "aid_y", "type_y"]
             )
             df["wgt"] = 1
 
@@ -68,7 +68,7 @@ def process_covisitation_in_chunks(
                 & (df.aid_x != df.aid_y)
             ]
             df = df[["session", "aid_x", "aid_y", "type_y"]].drop_duplicates(
-                ["session", "aid_x", "aid_y"]
+                ["session", "aid_x", "aid_y", "type_y"]
             )
             df["wgt"] = df.type_y.map(eval(str(config.type_weight)))
         elif type == "clicks":

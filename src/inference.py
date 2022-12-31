@@ -8,8 +8,10 @@ import pandas as pd
 from annoy import AnnoyIndex
 from gensim.models import Word2Vec
 from tqdm import tqdm
+
 warnings.filterwarnings("ignore")
 from pandarallel import pandarallel
+
 pandarallel.initialize(
     progress_bar=True,
     nb_workers=10,
