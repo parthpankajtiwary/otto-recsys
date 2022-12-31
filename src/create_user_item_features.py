@@ -209,7 +209,7 @@ def create_user_recency_features(df: pl.DataFrame) -> pl.DataFrame:
                 .filter(pl.col("type") == 2)
                 .dt.hour()
                 .mean()
-                .alias("user_avg_order_hour")
+                .alias("user_avg_order_hour"),
             ]
         )
         .fill_null(-1)

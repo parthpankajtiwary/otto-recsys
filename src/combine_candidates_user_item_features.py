@@ -18,12 +18,8 @@ def load_data() -> Tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     candidate_df_clicks = pl.read_parquet(
         f"{config.artifact_path}candidate_df_clicks.parquet"
     )
-    item_features = pl.read_parquet(
-        f"{config.artifact_path}item_features.parquet"
-    )
-    user_features = pl.read_parquet(
-        f"{config.artifact_path}user_features.parquet"
-    )
+    item_features = pl.read_parquet(f"{config.artifact_path}item_features.parquet")
+    user_features = pl.read_parquet(f"{config.artifact_path}user_features.parquet")
     return candidate_df_clicks, item_features, user_features
 
 
@@ -55,13 +51,19 @@ def main(cfg: DictConfig) -> None:
     candidate_df_clicks_with_features = join(
         candidate_df_clicks, user_features, on="session"
     )
-    print("Candidate df clicks with user features shape: ", candidate_df_clicks_with_features.shape)
+    print(
+        "Candidate df clicks with user features shape: ",
+        candidate_df_clicks_with_features.shape,
+    )
     candidate_df_clicks_with_features.write_parquet(
         f"{config.artifact_path}candidate_df_clicks_with_features.parquet"
     )
     print(candidate_df_clicks_with_features.head())
     assert candidate_df_clicks.shape[0] == candidate_df_clicks_with_features.shape[0]
-    print("Saved candidate df clicks with features to: ", f"{config.artifact_path}candidate_df_clicks_with_features.parquet")
+    print(
+        "Saved candidate df clicks with features to: ",
+        f"{config.artifact_path}candidate_df_clicks_with_features.parquet",
+    )
 
 
 if __name__ == "__main__":
