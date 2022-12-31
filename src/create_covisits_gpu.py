@@ -58,7 +58,7 @@ def process_covisitation_in_chunks(
                 & (df.aid_x != df.aid_y)
             ]
             df = df[["session", "aid_x", "aid_y", "type_y"]].drop_duplicates(
-                ["session", "aid_x", "aid_y"]
+                ["session", "aid_x", "aid_y", "type_y"]
             )
             df["wgt"] = 1
 
@@ -68,7 +68,7 @@ def process_covisitation_in_chunks(
                 & (df.aid_x != df.aid_y)
             ]
             df = df[["session", "aid_x", "aid_y", "type_y"]].drop_duplicates(
-                ["session", "aid_x", "aid_y"]
+                ["session", "aid_x", "aid_y", "type_y"]
             )
             df["wgt"] = df.type_y.map(eval(str(config.type_weight)))
         elif type == "clicks":
@@ -140,8 +140,8 @@ def main(cfg: DictConfig) -> None:
     config = cfg
     data, _ = load_data()
     generate_combined_covisitation(data, config.chunk_size)
-    # generate_combined_covisitation(data, config.chunk_size, type="carts-orders")
-    # generate_combined_covisitation(data, chunk_size=config.chunk_size, type="buy2buy")
+    generate_combined_covisitation(data, config.chunk_size, type="carts-orders")
+    generate_combined_covisitation(data, chunk_size=config.chunk_size, type="buy2buy")
 
 
 if __name__ == "__main__":
