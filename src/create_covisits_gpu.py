@@ -140,8 +140,8 @@ def main(cfg: DictConfig) -> None:
     config = cfg
     data, _ = load_data()
     generate_combined_covisitation(data, config.chunk_size)
-    generate_combined_covisitation(data, config.chunk_size, type="carts-orders")
-    generate_combined_covisitation(data, chunk_size=config.chunk_size, type="buy2buy")
+    # generate_combined_covisitation(data, config.chunk_size, type="carts-orders")
+    # generate_combined_covisitation(data, chunk_size=config.chunk_size, type="buy2buy")
 
 
 if __name__ == "__main__":

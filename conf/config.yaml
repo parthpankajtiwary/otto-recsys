@@ -2,7 +2,7 @@ data_path: "data/"
 validation_path: "data/local_validation/"
 artifact_path: "artifacts/"
 debug: False
-local_validation: False
+local_validation: True
 word2vec: True
 train_file: "train.parquet"
 test_file: "test.parquet"

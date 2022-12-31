@@ -12,6 +12,8 @@ def create_user_features(train: pl.DataFrame, test: pl.DataFrame) -> None:
     data = convert_seconds_to_milliseconds(data)
     data = create_user_recency_features(data)
     data = data.fill_null(-1)
+    print(data.head())
+    print("User features shape: ", data.shape)
     data.write_parquet(config.artifact_path + "user_features.parquet")
 
 
@@ -22,6 +24,8 @@ def create_item_features(train: pl.DataFrame, test: pl.DataFrame) -> None:
     df_time_features = create_time_features(data)
     data = df_recency_features.join(df_time_features, on="aid", how="left").sort("aid")
     data = data.fill_null(-1)
+    print(data.head())
+    print("Item features shape: ", data.shape)
     data.write_parquet(config.artifact_path + "item_features.parquet")
 
 
@@ -205,18 +209,7 @@ def create_user_recency_features(df: pl.DataFrame) -> pl.DataFrame:
                 .filter(pl.col("type") == 2)
                 .dt.hour()
                 .mean()
-                .alias("user_avg_order_hour"),
-                # average duration between events
-                pl.col("datetime")
-                .diff()
-                .mean()
-                .alias("user_avg_duration_between_events"),
-                # average duration between clicks
-                pl.col("datetime")
-                .filter(pl.col("type") == 0)
-                .diff()
-                .mean()
-                .alias("user_avg_duration_between_clicks"),
+                .alias("user_avg_order_hour")
             ]
         )
         .fill_null(-1)
