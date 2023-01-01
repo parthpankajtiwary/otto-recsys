@@ -31,8 +31,10 @@ def train_word2vec_model(sentences: pl.DataFrame) -> None:
         epochs=config.epochs,
         min_count=config.min_count,
     )
-    model.save(f"{config.model_path}word2vec.model")
-    print(f"Word2vec model saved to: {config.model_path}word2vec.model")
+    model.save(f"{config.model_path}word2vec_windowl_{config.window}.model")
+    print(
+        f"Word2vec model saved to: {config.model_path}word2vec_windowl_{config.window}.model"
+    )
 
 
 def load_data() -> Tuple[pl.DataFrame, pl.DataFrame]:

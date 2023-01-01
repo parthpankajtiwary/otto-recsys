@@ -1,3 +1,6 @@
+name: "n_tree 100 for build index with window of 5"
+tags: ["window length", "n_tree", "word2vec"]
+description: "n_tree 100 for build index with window of 5"
 data_path: "data/"
 validation_path: "data/local_validation/"
 artifact_path: "artifacts/"
@@ -12,7 +15,7 @@ submission_file: "submission.csv"
 model_path: "models/"
 curr_model_path: "models/word2vec.model"
 type_labels: {"clicks": 0, "carts": 1, "orders": 2}
-type_weight: {0: 1, 1: 6, 2: 3}
+type_weight: {0: 0.5, 1: 9, 2: 0.5}
 version: 1
 chunk_size: 200_000
 random_state: 42
@@ -28,4 +31,5 @@ negative: 20
 workers: 12
 epochs: 2
 min_count: 5
+n_trees: 100
 n_recent: 2

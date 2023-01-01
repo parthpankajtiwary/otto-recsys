@@ -42,23 +42,24 @@ def load_model():
     if not config.word2vec:
         return None
     print("Loading word2vec model...")
-    model = Word2Vec.load(config.model_path + "word2vec.model")
-    print("Model loaded from path: ", config.model_path + "word2vec.model")
+    model = Word2Vec.load(f"{config.model_path}word2vec_windowl_{config.window}.model")
+    print(
+        f"Model loaded from path: {config.model_path}word2vec_windowl_{config.window}.model"
+    )
     return model
 
 
-def build_index(model, n_trees=100) -> Tuple[AnnoyIndex, Dict[str, int]]:
+def build_index(model) -> Tuple[AnnoyIndex, Dict[str, int]]:
     """Build index for word2vec model."""
-    if config.word2vec:
-        print("Building index for word2vec model...")
-        aid2idx = {aid: i for i, aid in enumerate(model.wv.index_to_key)}
-        index = AnnoyIndex(model.wv.vector_size, metric="euclidean")
-        for idx in aid2idx.values():
-            index.add_item(idx, model.wv.vectors[idx])
-        index.build(n_trees=n_trees)
-        return index, aid2idx
-    else:
+    if not config.word2vec:
         return None, None
+    print("Building index for word2vec model...")
+    aid2idx = {aid: i for i, aid in enumerate(model.wv.index_to_key)}
+    index = AnnoyIndex(model.wv.vector_size, metric="euclidean")
+    for idx in aid2idx.values():
+        index.add_item(idx, model.wv.vectors[idx])
+    index.build(n_trees=config.n_trees)
+    return index, aid2idx
 
 
 def get_nns(
@@ -308,7 +309,11 @@ def compute_validation_score(pred: pd.DataFrame) -> float:
 def main(cfg: DictConfig) -> None:
     global config, run
     config = cfg
-    run = neptune.init_run()
+    run = neptune.init_run(
+        name=config.name,
+        description=config.description,
+        tags=list(config.tags),
+    )
     run["config"] = config
     data, test = load_data()
     top_clicks, top_orders = get_top_clicks_orders(test)

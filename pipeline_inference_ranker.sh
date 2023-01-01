@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
-python create_covisits_gpu.py local_validation=False
-python train_word2vec_model.py local_validation=False
-python create_candidates_dataframe.py local_validation=False
-python create_user_item_features.py local_validation=False
-python merge_candidate_df_with_user_item_features.py
-python generate_candidates_using_ranker.py
+python src/create_covisits_gpu.py local_validation=False
+# python src/train_word2vec_model.py
+# python src/create_candidates_df.py
+python src/create_user_item_features.py local_validation=False
+# python src/combine_candidates_user_item_features.py local_validation=False
+papermill test.ipynb output.ipynb
